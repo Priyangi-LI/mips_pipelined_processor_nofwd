@@ -1,0 +1,95 @@
+module mips_pipelined_cpu(input clk, input rst);
+
+// pc-related stuff
+wire [31:0] npc; wire [31:0] pc; wire [31:0] instr;
+
+// if/id wires
+wire [31:0] if_id_pc_plus_4; wire [31:0] if_id_instr;
+
+//instruction field wires
+wire [5:0] opcode; wire [5:0] funct; wire [4:0] rs; wire [4:0] rt; wire [4:0] rd;
+
+//control signals
+wire reg_dst; wire alu_src; wire mem_to_reg; wire reg_w; wire mem_r; wire mem_w; wire branch; wire j; wire [1:0] alu_op;
+
+//reg file
+wire [31:0] data_a; wire [31:0] data_b; wire [31:0] write_data; wire [4:0] id_write_reg;
+
+//sign ext imm
+wire [31:0] sign_ext_imm;
+
+// id/ex wires
+wire [31:0] id_ex_instr; wire [31:0] id_ex_pc_plus_4; wire [4:0] id_ex_write_reg; wire [31:0] id_ex_data_a; wire [31:0] id_ex_data_b;wire[31:0] id_ex_sign_ext_imm;  wire id_ex_alu_src; wire [1:0] id_ex_alu_op; wire id_ex_mem_r; wire id_ex_mem_w; wire id_ex_branch; wire id_ex_reg_w; wire id_ex_mem_to_reg;
+
+//alu control unit
+wire [3:0] alu_ctrl_signal;
+
+//alu unit
+wire [31:0] src_b; wire [31:0] alu_result; wire zero; wire branch_taken; wire [31:0] branch_target; 
+
+// ex/mem wires
+wire [31:0] ex_mem_data_b; wire [31:0] ex_mem_alu_result; wire [4:0] ex_mem_write_reg; wire ex_mem_mem_r; wire  ex_mem_mem_w; wire ex_mem_reg_w; wire ex_mem_mem_to_reg;
+
+//data memory
+wire [31:0] mem_data;
+
+// mem/wb wires
+wire [31:0] mem_wb_mem_data; wire [31:0] mem_wb_alu_result; wire [4:0] mem_wb_write_reg; wire mem_wb_reg_w; wire mem_wb_mem_to_reg;
+
+
+//pc-update
+wire [31:0] pc_plus_4;  wire [31:0] jump_target; reg [1:0] pc_slt; 
+
+assign opcode = if_id_instr[31:26];
+assign rs = if_id_instr[25:21];
+assign rt = if_id_instr[20:16];
+assign rd = if_id_instr[15:11];
+assign funct = if_id_instr[5:0];
+
+
+//INSTANTIATING MODULES
+
+pc PC(clk,npc,rst,pc);
+
+instr_mem INSTR_MEM(pc, instr);
+
+assign pc_plus_4 = pc + 4;
+assign npc = pc_plus_4;
+
+if_id IF_ID(clk, rst, pc_plus_4,instr, if_id_pc_plus_4, if_id_instr);
+
+
+mips_opcode_decoder OPCODE_DECODER(if_id_instr,reg_dst,alu_src,mem_to_reg, reg_w, mem_r,mem_w,branch, j,alu_op);
+
+sign_ext SIGN_EXT(if_id_instr, sign_ext_imm);
+
+reg_dst_mux REG_DEST_MUX(rt,rd,reg_dst,id_write_reg);
+
+reg_file REG_FILE(clk, mem_wb_reg_w, rs, rt, mem_wb_write_reg, write_data, data_a, data_b);
+
+id_ex ID_EX(clk,rst,if_id_instr,if_id_pc_plus_4, id_write_reg, data_a, data_b,sign_ext_imm,alu_src,alu_op, mem_r, mem_w, branch,reg_w,mem_to_reg,id_ex_instr, id_ex_pc_plus_4, id_ex_write_reg, id_ex_data_a, id_ex_data_b, id_ex_sign_ext_imm, id_ex_alu_src, id_ex_alu_op, id_ex_mem_r, id_ex_mem_w, id_ex_branch, id_ex_reg_w, id_ex_mem_to_reg);
+
+
+alu_ctrl ALU_CTRL (id_ex_alu_op, id_ex_instr[5:0], alu_ctrl_signal);
+
+alu_src_mux ALU_SRC_MUX(id_ex_data_b, id_ex_sign_ext_imm, id_ex_alu_src, src_b);
+
+alu ALU_UNIT(id_ex_data_a, src_b, alu_ctrl_signal, alu_result, zero);
+
+assign branch_target = id_ex_pc_plus_4 + (id_ex_sign_ext_imm << 2);
+assign branch_taken = id_ex_branch & zero;
+
+ex_mem EX_MEM(clk,rst, id_ex_data_b,alu_result, id_ex_write_reg, id_ex_mem_r, id_ex_mem_w, id_ex_reg_w, id_ex_mem_to_reg, ex_mem_data_b, ex_mem_alu_result, ex_mem_write_reg, ex_mem_mem_r, ex_mem_mem_w, ex_mem_reg_w, ex_mem_mem_to_reg);
+
+
+data_mem DATA_MEM(clk,ex_mem_mem_r, ex_mem_mem_w, ex_mem_alu_result, ex_mem_data_b, mem_data);
+
+mem_wb MEM_WB (clk,rst, mem_data, ex_mem_alu_result, ex_mem_write_reg, ex_mem_reg_w, ex_mem_mem_to_reg, mem_wb_mem_data, mem_wb_alu_result, mem_wb_write_reg, mem_wb_reg_w, mem_wb_mem_to_reg);
+
+
+wb_mux WB_MUX(mem_wb_alu_result, mem_wb_mem_data, mem_wb_mem_to_reg, write_data);
+
+
+
+endmodule
+

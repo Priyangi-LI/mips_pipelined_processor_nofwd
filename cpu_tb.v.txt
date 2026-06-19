@@ -1,0 +1,35 @@
+module mips_cpu_tb;
+
+reg clk = 0; reg reset;
+
+mips_pipelined_cpu CPU (clk,reset);
+
+always #5 clk = ~clk;
+
+initial begin
+
+$dumpfile("cpu_tb.vcd");
+$dumpvars(0,CPU);
+
+end
+
+initial begin
+
+reset = 1;
+#10 reset = 0;
+#500;
+
+$display("R8 = %d", CPU.REG_FILE.reg_bank[8]);
+$display("R9 = %d", CPU.REG_FILE.reg_bank[9]);
+$display("R10 = %d", CPU.REG_FILE.reg_bank[10]);
+
+
+
+$display("PC=%h", CPU.pc);
+$display("INSTR=%h", CPU.instr);
+$display("MEM[0] = %d", CPU.DATA_MEM.mem_bank[0]);
+$finish;
+
+end
+
+endmodule

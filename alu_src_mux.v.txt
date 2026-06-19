@@ -1,0 +1,5 @@
+module alu_src_mux(input [31:0] rt_data, input [31:0] sign_imm, input alu_src, output [31:0] src_b);
+
+assign src_b = (alu_src==0)? rt_data : sign_imm;
+
+endmodule

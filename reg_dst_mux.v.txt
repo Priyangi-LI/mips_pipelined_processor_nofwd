@@ -1,0 +1,5 @@
+module reg_dst_mux(input [4:0] rt, input [4:0] rd, input reg_dst, output [4:0] write_reg);
+
+assign write_reg = (reg_dst==0)? rt: rd;
+
+endmodule

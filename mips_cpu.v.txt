@@ -1,0 +1,75 @@
+module mips_cpu(input clk, input rst);
+// pc-related stuff
+wire [31:0] npc; wire [31:0] pc; wire [31:0] instr;
+
+//instruction field wires
+wire [5:0] opcode; wire [5:0] funct; wire [4:0] rs; wire [4:0] rt; wire [4:0] rd;
+
+//control signals
+wire reg_dst; wire alu_src; wire mem_to_reg; wire reg_w; wire mem_r; wire mem_w; wire branch; wire j; wire [1:0] alu_op;
+
+//reg file
+wire [31:0] data_a; wire [31:0] data_b; wire [31:0] write_data; wire [4:0] write_reg;
+
+//sign ext imm
+wire [31:0] sign_ext_imm;
+
+//alu control unit
+wire [3:0] alu_ctrl_signal;
+
+//alu unit
+wire [31:0] src_b; wire [31:0] alu_result; wire zero;
+
+//data memory
+wire [31:0] mem_data;
+
+//pc-update
+wire [31:0] pc_plus_4; wire [31:0] branch_target; wire [31:0] jump_target; reg [1:0] pc_slt; wire branch_taken;
+
+pc PC(clk,npc,rst,pc);
+
+instr_mem INSTR_MEM(pc, instr);
+
+
+mips_opcode_decoder OPCODE_DECODER(instr,reg_dst,alu_src,mem_to_reg, reg_w, mem_r,mem_w,branch, j,alu_op);
+
+sign_ext SIGN_EXT(instr, sign_ext_imm);
+
+reg_dst_mux REG_DEST_MUX(rt,rd,reg_dst,write_reg);
+
+assign opcode = instr[31:26];
+assign rs = instr[25:21];
+assign rt = instr[20:16];
+assign rd = instr[15:11];
+assign funct = instr[5:0];
+
+reg_file REG_FILE(clk, reg_w, rs, rt, write_reg, write_data, data_a, data_b);
+
+alu_ctrl ALU_CTRL (alu_op, funct, alu_ctrl_signal);
+
+alu_src_mux ALU_SRC_MUX(data_b, sign_ext_imm, alu_src, src_b);
+
+alu ALU_UNIT(data_a, src_b, alu_ctrl_signal, alu_result, zero);
+
+data_mem DATA_MEM(clk,mem_r, mem_w, alu_result, data_b, mem_data);
+
+wb_mux WB_MUX(alu_result, mem_data, mem_to_reg, write_data);
+
+assign pc_plus_4 = pc + 4;
+assign branch_target = pc_plus_4 + (sign_ext_imm << 2);
+assign jump_target = {pc_plus_4[31:28], instr[25:0], 2'b00};
+assign branch_taken = branch & zero;
+
+always @(*)
+begin
+
+if (j)	pc_slt = 2'b10;
+else if (branch_taken)	pc_slt = 2'b01;
+else	pc_slt = 2'b00;
+
+end
+
+pc_mux PC_MUX(pc_slt, pc_plus_4, branch_target, jump_target, npc);
+
+endmodule
+

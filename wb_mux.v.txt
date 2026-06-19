@@ -1,0 +1,5 @@
+module wb_mux(input [31:0] alu_result, input [31:0] mem_data, input mem_to_reg, output [31:0] data_w);
+
+assign data_w = (mem_to_reg==0)? alu_result : mem_data;
+
+endmodule

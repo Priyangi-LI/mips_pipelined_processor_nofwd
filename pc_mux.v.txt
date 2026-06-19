@@ -1,0 +1,13 @@
+module pc_mux(input [1:0] pc_slt, input [31:0] pc_plus_4, input [31:0] branch_target, input [31:0] jump_target, output reg [31:0] npc);
+
+always @(*)
+begin
+case(pc_slt)
+
+	2'b00: npc = pc_plus_4;
+	2'b01: npc = branch_target;
+	2'b10: npc = jump_target;
+	default : npc = 32'b0;
+endcase
+end
+endmodule
