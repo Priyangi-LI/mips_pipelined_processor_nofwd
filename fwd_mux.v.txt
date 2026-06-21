@@ -1,0 +1,17 @@
+module fwd_mux(input [1:0] fwd, input [31:0] id_ex_data, input [31:0] ex_mem_alu_result, input [31:0] write_data, output reg [31:0] fwd_data);
+
+always @(*) begin
+
+case(fwd)
+
+	2'b00: fwd_data = id_ex_data; 
+	2'b01: fwd_data = write_data;
+	2'b10: fwd_data = ex_mem_alu_result;
+default : fwd_data = 32'b0;
+
+endcase
+
+end
+
+endmodule
+

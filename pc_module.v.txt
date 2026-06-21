@@ -1,11 +1,11 @@
-module pc(input clk, input [31:0] npc, input rst, output reg [31:0] pc);
+module pc(input clk, input enable, input [31:0] npc, input rst, output reg [31:0] pc);
 
 always @(posedge clk)
 
 begin
 
 if (rst)	pc <= 32'b0;
-else	pc <= npc;
+else if (enable) 	pc <= npc;
 
 end
 endmodule

@@ -3,7 +3,7 @@ reg [31:0] mem_bank [31:0];
 
 integer i;
 initial begin
-for (i=0;i<31;i=i+1)	mem_bank[i] = 32'b0;
+for (i=0;i<32;i=i+1)	mem_bank[i] = 32'b0;
 end
 
 assign data_w = mem_bank[addr>>2]; 

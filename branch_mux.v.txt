@@ -1,0 +1,10 @@
+module branch_mux(input branch, input [31:0] pc_plus_4, input [31:0] branch_target, output [31:0] reg npc);
+
+always @(*) begin
+
+if (branch)	npc = branch_target;
+else npc = pc_plus_4;
+
+end
+
+endmodule
