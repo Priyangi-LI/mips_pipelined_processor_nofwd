@@ -1,4 +1,4 @@
-module ex_mem(input clk, input rst, input [31:0] data_b_in, input [31:0] alu_result_in, input [4:0] write_reg_in, input mem_r_in, input mem_w_in, input reg_w_in, input mem_to_reg_in, output reg [31:0] data_b_out, output reg [31:0] alu_result_out, output reg [4:0] write_reg_out, output reg mem_r_out, output reg mem_w_out, output reg reg_w_out, output reg mem_to_reg_out);
+module ex_mem(input clk, input enable, input rst, input [31:0] data_b_in, input [31:0] alu_result_in, input [4:0] write_reg_in, input mem_r_in, input mem_w_in, input reg_w_in, input mem_to_reg_in, output reg [31:0] data_b_out, output reg [31:0] alu_result_out, output reg [4:0] write_reg_out, output reg mem_r_out, output reg mem_w_out, output reg reg_w_out, output reg mem_to_reg_out);
 
 always @(posedge clk)
 begin
@@ -7,7 +7,7 @@ if (rst) begin
 data_b_out <= 32'b0; alu_result_out <= 32'b0; write_reg_out <= 5'b0; mem_r_out <= 0; mem_w_out <= 0; reg_w_out <= 0; mem_to_reg_out <= 0;
 end
 
-else begin
+else if (enable) begin
 data_b_out <= data_b_in;alu_result_out <= alu_result_in; write_reg_out <= write_reg_in; mem_r_out <= mem_r_in; mem_w_out <= mem_w_in; reg_w_out <= reg_w_in; mem_to_reg_out <= mem_to_reg_in; 
 end
 

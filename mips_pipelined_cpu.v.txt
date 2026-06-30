@@ -34,7 +34,12 @@ wire [31:0] ex_mem_data_b; wire [31:0] ex_mem_alu_result; wire [4:0] ex_mem_writ
 wire [31:0] mem_data;
 
 //cache wires
-wire cache_hit; wire lower_mem_r; wire [31:0] lower_addr; wire [31:0] cache_read_data; 
+wire cache_hit; wire lower_mem_r; wire [31:0] lower_addr; wire [31:0] cache_read_data; wire lower_mem_w; wire [31:0] lower_write_data;
+
+wire cache_stall; wire actual_pc_write; wire actual_if_id_write; wire actual_id_ex_write; wire actual_ex_mem_write; wire actual_mem_wb_write;
+assign actual_pc_write = pc_write && !cache_stall;
+assign actual_if_id_write = if_id_write && !cache_stall;
+assign actual_id_ex_write = !cache_stall; assign actual_ex_mem_write = !cache_stall; assign actual_mem_wb_write = !cache_stall;
 
 // mem/wb wires
 wire [31:0] mem_wb_mem_data; wire [31:0] mem_wb_alu_result; wire [4:0] mem_wb_write_reg; wire mem_wb_reg_w; wire mem_wb_mem_to_reg;
@@ -84,10 +89,23 @@ always @(*) begin
         pc_slt = 2'b00;
 end
 
+//memory muxes (fed into data_mem)
+
+wire actual_mem_w; wire [31:0] actual_addr; wire [31:0] actual_data;
+
+assign actual_mem_w =
+    cache_stall ? lower_mem_w : ex_mem_mem_w;
+
+assign actual_addr =
+    cache_stall ? lower_addr : ex_mem_alu_result;
+
+assign actual_data =
+    cache_stall ? lower_write_data : ex_mem_data_b;
+
 
 //INSTANTIATING MODULES
 
-pc PC(clk,pc_write,npc,rst,pc);
+pc PC(clk,actual_pc_write,npc,rst,pc);
 
 instr_mem INSTR_MEM(pc, instr);
 
@@ -97,7 +115,7 @@ assign pc_plus_4 = pc + 4;
 pc_mux PC_MUX(pc_slt, pc_plus_4, branch_target, jump_target, npc);
 
 
-if_id IF_ID(clk, if_id_write,rst, pipeline_flush,pc_plus_4,instr, if_id_pc_plus_4, if_id_instr);
+if_id IF_ID(clk, actual_if_id_write,rst, pipeline_flush,pc_plus_4,instr, if_id_pc_plus_4, if_id_instr);
 
 
 mips_opcode_decoder OPCODE_DECODER(if_id_instr,reg_dst,alu_src,mem_to_reg, reg_w, mem_r,mem_w,branch, j,alu_op);
@@ -109,7 +127,7 @@ reg_dst_mux REG_DEST_MUX(rt,rd,reg_dst,id_write_reg);
 reg_file REG_FILE(clk, mem_wb_reg_w, rs, rt, mem_wb_write_reg, write_data, data_a, data_b);
 
 
-id_ex ID_EX(clk,rst,branch_flush,if_id_instr,if_id_pc_plus_4, rs,rt, id_write_reg, data_a, data_b,sign_ext_imm,bubble_alu_src,bubble_alu_op, bubble_mem_r,bubble_mem_w, bubble_branch,bubble_reg_w,bubble_mem_to_reg,id_ex_instr, id_ex_pc_plus_4, id_ex_rs, id_ex_rt,id_ex_write_reg, id_ex_data_a, id_ex_data_b, id_ex_sign_ext_imm, id_ex_alu_src, id_ex_alu_op, id_ex_mem_r, id_ex_mem_w, id_ex_branch, id_ex_reg_w, id_ex_mem_to_reg);
+id_ex ID_EX(clk,actual_id_ex_write, rst,branch_flush,if_id_instr,if_id_pc_plus_4, rs,rt, id_write_reg, data_a, data_b,sign_ext_imm,bubble_alu_src,bubble_alu_op, bubble_mem_r,bubble_mem_w, bubble_branch,bubble_reg_w,bubble_mem_to_reg,id_ex_instr, id_ex_pc_plus_4, id_ex_rs, id_ex_rt,id_ex_write_reg, id_ex_data_a, id_ex_data_b, id_ex_sign_ext_imm, id_ex_alu_src, id_ex_alu_op, id_ex_mem_r, id_ex_mem_w, id_ex_branch, id_ex_reg_w, id_ex_mem_to_reg);
 
 assign branch_target = id_ex_pc_plus_4 + (id_ex_sign_ext_imm << 2);
 assign branch_taken = id_ex_branch && zero;
@@ -125,20 +143,22 @@ alu ALU_UNIT(fwd_data_a, src_b, alu_ctrl_signal, alu_result, zero);
 
 
 
-ex_mem EX_MEM(clk,rst, fwd_data_b,alu_result, id_ex_write_reg, id_ex_mem_r, id_ex_mem_w, id_ex_reg_w, id_ex_mem_to_reg, ex_mem_data_b, ex_mem_alu_result, ex_mem_write_reg, ex_mem_mem_r, ex_mem_mem_w, ex_mem_reg_w, ex_mem_mem_to_reg);
-
-l1_cache L1_CACHE(clk, ex_mem_mem_r, ex_mem_alu_result, cache_read_data, cache_hit, mem_data, lower_mem_r, lower_addr);
-
-data_mem DATA_MEM(clk,lower_mem_r, ex_mem_mem_w, lower_addr, ex_mem_data_b, mem_data);
+ex_mem EX_MEM(clk,actual_ex_mem_write, rst, fwd_data_b,alu_result, id_ex_write_reg, id_ex_mem_r, id_ex_mem_w, id_ex_reg_w, id_ex_mem_to_reg, ex_mem_data_b, ex_mem_alu_result, ex_mem_write_reg, ex_mem_mem_r, ex_mem_mem_w, ex_mem_reg_w, ex_mem_mem_to_reg);
 
 
 
-mem_wb MEM_WB (clk,rst, cache_read_data, ex_mem_alu_result, ex_mem_write_reg, ex_mem_reg_w, ex_mem_mem_to_reg, mem_wb_mem_data, mem_wb_alu_result, mem_wb_write_reg, mem_wb_reg_w, mem_wb_mem_to_reg);
+l1_cache L1_CACHE(clk, ex_mem_mem_r, ex_mem_mem_w, ex_mem_alu_result, ex_mem_data_b, cache_read_data, cache_hit, mem_data, lower_mem_r, lower_addr, lower_mem_w, lower_write_data, cache_stall);
+
+data_mem DATA_MEM(clk,lower_mem_r, actual_mem_w, actual_addr, actual_data, mem_data);
+
+
+
+mem_wb MEM_WB (clk,actual_mem_wb_write,rst, cache_read_data, ex_mem_alu_result, ex_mem_write_reg, ex_mem_reg_w, ex_mem_mem_to_reg, mem_wb_mem_data, mem_wb_alu_result, mem_wb_write_reg, mem_wb_reg_w, mem_wb_mem_to_reg);
 
 
 wb_mux WB_MUX(mem_wb_alu_result, mem_wb_mem_data, mem_wb_mem_to_reg, write_data);
 
-fwd_unit FWD_UNIT (id_ex_rs, id_ex_rt, ex_mem_write_reg, mem_wb_write_reg,ex_mem_reg_w, mem_wb_reg_w, fwd_a, fwd_b);
+fwd_unit FWD_UNIT (id_ex_rs, id_ex_rt, ex_mem_write_reg, mem_wb_write_reg,ex_mem_reg_w, mem_wb_reg_w, fwd_a, fwd_b, cache_stall);
 
 fwd_mux FWD_A (fwd_a, id_ex_data_a, ex_mem_alu_result, write_data, fwd_data_a);
 fwd_mux FWD_B (fwd_b, id_ex_data_b,ex_mem_alu_result,write_data, fwd_data_b);
@@ -147,6 +167,7 @@ fwd_mux FWD_B (fwd_b, id_ex_data_b,ex_mem_alu_result,write_data, fwd_data_b);
 hazard_detect_unit HAZARD_DETECT_UNIT (id_ex_mem_r, id_ex_rt,rs,rt,pc_write, if_id_write,ctrl_flush);
 
 bubble_mux BUBBLE_MUX(ctrl_flush, reg_w, mem_r, mem_w,  branch,  mem_to_reg, alu_src,alu_op, bubble_reg_w,bubble_mem_r, bubble_mem_w, bubble_branch, bubble_mem_to_reg, bubble_alu_src, bubble_alu_op);
+
 
 
 endmodule

@@ -1,0 +1,76 @@
+module l1_cache(input clk, input mem_r, input mem_w, input [31:0] addr, input [31:0] write_data, output reg [31:0] read_data, output hit, input [31:0] lower_data, output reg lower_mem_r, output reg [31:0] lower_addr, output reg lower_mem_w, output reg [31:0] lower_write_data);
+
+reg [31:0] data_array [15:0];
+reg [25:0] tag_array [15:0];
+reg valid_array [15:0];
+reg dirty_array [15:0];
+
+integer i;
+
+initial begin
+    for(i=0;i<16;i=i+1) begin
+        valid_array[i] = 1'b0;
+        tag_array[i]   = 26'b0;
+        data_array[i]  = 32'b0;
+	dirty_array[i] = 0;
+    end
+end
+
+wire [3:0] index; wire [25:0] tag;
+assign index = addr[5:2]; assign tag = addr[31:6];
+
+wire [31:0] evict_addr; assign evict_addr = {tag_array[index], index, 2'b00};
+
+assign hit = valid_array[index] && (tag_array[index] == tag);
+
+wire dirty_evict; assign dirty_evict = valid_array[index] && dirty_array[index] &&
+    (tag_array[index] != tag);
+
+//read hit
+always @(*) begin
+//initialise 
+lower_mem_r = 0; lower_addr = addr; read_data = 32'b0;
+
+if (mem_r) begin 
+
+if (hit)	read_data = data_array[index];
+else begin
+lower_mem_r = 1; lower_addr = addr; read_data = lower_data;
+end
+end
+
+end
+
+//dirty eviction
+
+always @(*) begin
+
+    lower_mem_w = 0;
+    lower_write_data = 32'b0;
+
+if(dirty_evict) begin
+    lower_mem_w = 1;
+    lower_addr = evict_addr;
+    lower_write_data = data_array[index];
+end
+end
+
+always @(posedge clk) begin
+
+	//write hit
+    if (mem_w && hit) begin 
+	dirty_array[index] <=1; data_array[index] <= write_data;
+	end
+	//write miss
+    if (mem_w && !hit) begin
+	dirty_array[index] <=1; data_array[index] <= write_data; valid_array[index] <= 1; tag_array[index] <= tag;
+    end
+	//read miss
+    if(mem_r && !hit) begin
+        data_array[index] <= lower_data;
+        tag_array[index] <= tag;
+        valid_array[index] <= 1; dirty_array[index] <=0;
+    end
+end
+
+endmodule

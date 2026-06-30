@@ -1,8 +1,34 @@
-module l1_cache(input clk, input mem_r, input [31:0] addr, output reg [31:0] read_data, output hit, input [31:0] lower_data, output reg lower_mem_r, output reg [31:0] lower_addr);
+module l1_cache(input clk, input mem_r, input mem_w, input [31:0] addr, input [31:0] write_data, output reg [31:0] read_data, output hit, input [31:0] lower_data, output reg lower_mem_r, output reg [31:0] lower_addr, output reg lower_mem_w, output reg [31:0] lower_write_data, output cache_stall);
 
+
+//DECLARATIONS
 reg [31:0] data_array [15:0];
 reg [25:0] tag_array [15:0];
 reg valid_array [15:0];
+reg dirty_array [15:0];
+reg [31:0] refill_data;
+
+wire [3:0] index; wire [25:0] tag;
+assign index = addr[5:2]; assign tag = addr[31:6];
+
+assign hit = valid_array[index] && (tag_array[index] == tag);
+
+wire dirty_evict; assign dirty_evict = valid_array[index] && dirty_array[index] &&
+    (tag_array[index] != tag);
+
+//states
+localparam IDLE        = 2'b00;
+localparam WRITEBACK   = 2'b01;
+localparam FILL        = 2'b10;
+localparam REFILL_WAIT = 2'b11;
+reg [1:0] state;
+
+wire [31:0] evict_addr; assign evict_addr = {tag_array[index], index, 2'b00};
+reg [31:0] miss_addr;  reg [3:0] miss_index; reg [25:0] miss_tag; 
+reg [25:0] evict_tag; reg [31:0] evict_data;
+
+assign cache_stall = (state != IDLE) || ((state == IDLE) && (mem_r || mem_w) && !hit);
+reg miss_is_write; reg [31:0] miss_write_data;
 
 integer i;
 
@@ -11,33 +37,139 @@ initial begin
         valid_array[i] = 1'b0;
         tag_array[i]   = 26'b0;
         data_array[i]  = 32'b0;
+	dirty_array[i] = 0;
     end
+    state = IDLE;
 end
 
-wire [3:0] index; wire [25:0] tag;
-assign index = addr[5:2]; assign tag = addr[31:6];
 
-assign hit = valid_array[index] && (tag_array[index] == tag);
-//read hit
+// unified lower-memory interface (single driver for all lower_* signals)
 always @(*) begin
-//initialise 
-lower_mem_r = 0; lower_addr = addr; read_data = 32'b0;
-if (mem_r) begin 
+    lower_mem_r       = 0;
+    lower_mem_w       = 0;
+    lower_addr        = 0;
+    lower_write_data  = 0;
+    read_data         = 0;
 
-if (hit)	read_data = data_array[index];
-else begin
-lower_mem_r = 1; lower_addr = addr; read_data = lower_data;
-end
-end
+    case (state)
 
+        WRITEBACK: begin
+            lower_mem_w      = 1;
+            lower_addr       = {evict_tag, miss_index, 2'b00};
+            lower_write_data = evict_data;
+        end
+
+        REFILL_WAIT: begin
+            lower_mem_r = 1;
+            lower_addr  = miss_addr;
+        end
+
+        default: begin // IDLE, FILL
+            if (mem_r) begin
+                if (hit)
+                    read_data = data_array[index];
+                else begin
+                    lower_mem_r = 1;
+                    lower_addr  = addr;
+                    read_data   = lower_data;
+                end
+            end
+        end
+
+    endcase
 end
 
 always @(posedge clk) begin
-    if(mem_r && !hit) begin
-        data_array[index] <= lower_data;
-        tag_array[index] <= tag;
-        valid_array[index] <= 1'b1;
+
+    if (state == IDLE) begin
+
+        if ((mem_w || mem_r) && !hit) begin
+
+            miss_addr <= addr;
+            miss_index <= index;
+            miss_tag <= tag;
+
+	    evict_tag <= tag_array[index];    evict_data <= data_array[index];
+
+            miss_is_write <= mem_w;
+            miss_write_data <= write_data;
+
+            if (dirty_evict)
+                state <= WRITEBACK;
+            else
+                state <= REFILL_WAIT;
+    $display(
+        "MISS addr=%d index=%d valid=%d dirty=%d oldtag=%d newtag=%d dirty_evict=%d",
+        addr,
+        index,
+        valid_array[index],
+        dirty_array[index],
+        tag_array[index],
+        tag,
+        dirty_evict
+    );
+
+        end
+
     end
+
+    else if (state == WRITEBACK) begin
+
+        state <= REFILL_WAIT;
+
+    end
+else if (state == REFILL_WAIT) begin
+
+    state <= FILL;  refill_data <= lower_data;
+end
+
+    else if (state == FILL) begin
+
+$display(
+"FILL index=%d tag=%d write=%d refill_data=%d",
+miss_index,
+miss_tag,
+miss_is_write,
+refill_data
+);
+
+        tag_array[miss_index] <= miss_tag;
+        valid_array[miss_index] <= 1;
+
+        if (miss_is_write) begin
+            data_array[miss_index] <= miss_write_data;
+            dirty_array[miss_index] <= 1;
+        end
+        else begin
+            data_array[miss_index] <= refill_data;
+            dirty_array[miss_index] <= 0;
+        end
+
+        state <= IDLE;
+
+    end
+
+    // write hit logic
+if (mem_w && hit && state == IDLE) begin
+    dirty_array[index] <= 1;
+    data_array[index] <= write_data;
+end
+
+end
+always @(posedge clk) begin
+    if(mem_r || mem_w)
+        $display("CACHE ACCESS addr=%d mem_r=%d mem_w=%d",
+                 addr, mem_r, mem_w);
+end
+
+always @(posedge clk) begin
+    if(state == REFILL_WAIT)
+        $display(
+            "REFILL_WAIT lower_addr=%d lower_data=%d lower_mem_r=%d",
+            lower_addr,
+            lower_data,
+            lower_mem_r
+        );
 end
 
 endmodule
