@@ -1,0 +1,229 @@
+module l2_cache(input clk, input mem_r, input mem_w, input [31:0] addr, input [31:0] write_data, output reg [31:0] read_data, output hit, input [31:0] lower_data, output reg lower_mem_r, output reg [31:0] lower_addr, output reg lower_mem_w, output reg [31:0] lower_write_data, output cache_stall);
+
+
+//address decomposition
+wire [3:0] index; wire [25:0] tag;
+assign index = addr[5:2]; assign tag = addr[31:6];
+//defining arrays
+reg [31:0] data_array [15:0][1:0]; reg [25:0] tag_array [15:0][1:0];
+reg valid_array [15:0][1:0]; reg dirty_array [15:0][1:0];
+reg lru_array [15:0];
+
+reg [31:0] miss_addr;
+reg [3:0]  miss_index;
+reg [25:0] miss_tag;
+
+reg miss_is_write;
+reg [31:0] miss_write_data;
+
+reg [31:0] refill_data;
+
+//detecting hit
+wire hit_way0; wire hit_way1;
+
+assign hit_way0 =     valid_array[index][0] &&    (tag_array[index][0] == tag);
+assign hit_way1 =     valid_array[index][1] &&    (tag_array[index][1] == tag);
+
+assign hit = hit_way0 || hit_way1;
+//way selection
+reg hit_way;
+
+//victim way
+wire victim_way;
+assign victim_way =
+    !valid_array[index][0] ? 0 :
+    !valid_array[index][1] ? 1 :
+    (lru_array[index] ? 0 : 1);
+
+reg victim_way_reg;
+
+reg [25:0] evict_tag;
+reg [31:0] evict_data;
+
+wire dirty_evict; assign dirty_evict =     valid_array[index][victim_way] &&     dirty_array[index][victim_way];
+
+//FSM 
+localparam IDLE        = 2'b00;
+localparam WRITEBACK   = 2'b01;
+localparam FILL        = 2'b10;
+localparam REFILL_WAIT = 2'b11;
+
+reg [1:0] state;
+
+assign cache_stall =     (state != IDLE) ||     ((state == IDLE) && (mem_r || mem_w) && !hit);
+
+//INITIALISING
+integer i;
+integer w;
+
+initial begin
+
+    for(i=0;i<16;i=i+1) begin
+
+        for(w=0;w<2;w=w+1) begin
+
+            valid_array[i][w] = 0;
+            dirty_array[i][w] = 0;
+
+            tag_array[i][w] = 0;
+            data_array[i][w] = 0;
+
+        end
+
+        lru_array[i] = 0;
+
+    end
+    state = IDLE;
+
+end
+
+
+
+// unified lower-memory interface (single driver for all lower_* signals)
+always @(*) begin
+    lower_mem_r       = 0;
+    lower_mem_w       = 0;
+    lower_addr        = 0;
+    lower_write_data  = 0;
+    read_data         = 0;
+
+    case (state)
+
+        WRITEBACK: begin
+            lower_mem_w      = 1;
+            lower_addr       = {evict_tag, miss_index, 2'b00};
+            lower_write_data = evict_data;
+        end
+
+        REFILL_WAIT: begin
+            lower_mem_r = 1;
+            lower_addr  = miss_addr;
+        end
+
+        default: begin // IDLE, FILL
+
+                if(hit_way0)    read_data = data_array[index][0];
+		else if(hit_way1)	read_data = data_array[index][1];
+                else	read_data = 0;
+            
+        end
+
+    endcase
+end
+
+always @(*) begin
+
+    if(hit_way0)
+        hit_way = 0;
+    else if(hit_way1)
+        hit_way = 1;
+    else
+        hit_way = 0;
+
+end
+
+
+//write hit
+always @(posedge clk) begin
+
+if(mem_w && hit_way0 && state == IDLE) begin
+    dirty_array[index][0] <= 1;
+    data_array[index][0] <= write_data;
+end
+
+if(mem_w && hit_way1 && state == IDLE) begin
+    dirty_array[index][1] <= 1;
+    data_array[index][1] <= write_data;
+end
+
+//lru update
+if((mem_r || mem_w) && hit_way0)
+    lru_array[index] <= 0;
+
+if((mem_r || mem_w) && hit_way1)
+    lru_array[index] <= 1;
+
+end
+
+//idle state
+
+always @(posedge clk) begin
+//IDLE STATE
+if (state == IDLE) begin
+if((mem_r || mem_w) && !hit) begin //miss detection
+
+    miss_addr <= addr;
+    miss_tag <= tag;
+    miss_index <= index;
+    
+    evict_tag <= tag_array[index][victim_way];    evict_data <= data_array[index][victim_way];
+
+    miss_is_write <= mem_w;
+    miss_write_data <= write_data;
+ 
+    victim_way_reg <= victim_way;
+
+
+    if(dirty_evict)
+        state <= WRITEBACK;
+    else
+        state <= REFILL_WAIT;
+
+end
+end
+//WRITEBACK STATE
+else if (state == WRITEBACK) begin
+
+        state <= REFILL_WAIT;
+
+    end
+//REFILL_WAIT STATE
+else if (state == REFILL_WAIT) begin
+
+    state <= FILL;  refill_data <= lower_data;
+    end
+//FILL STATE
+else if (state == FILL) begin
+
+        tag_array[miss_index][victim_way_reg] <= miss_tag;
+        valid_array[miss_index][victim_way_reg] <= 1;
+
+        if (miss_is_write) begin
+            data_array[miss_index][victim_way_reg] <= miss_write_data;
+            dirty_array[miss_index][victim_way_reg] <= 1;
+        end
+        else begin
+            data_array[miss_index][victim_way_reg] <= refill_data;
+            dirty_array[miss_index][victim_way_reg] <= 0;
+        end
+
+        state <= IDLE;
+	lru_array[miss_index] <= victim_way_reg;
+
+    end
+end
+
+//DEBUGGING
+always @(posedge clk)
+begin
+    if((mem_r || mem_w) && !hit)
+        $display("L2 MISS addr=%d victim_way=%d dirty=%d",addr,victim_way,dirty_evict);
+end
+
+always @(posedge clk)
+begin
+    if(hit_way0 || hit_way1) $display("L2 HIT addr=%d way=%d",addr,hit_way1);
+end
+
+always @(posedge clk)
+begin
+    if(hit_way0)
+        $display("WAY0 DATA=%d", data_array[index][0]);
+
+    if(hit_way1)
+        $display("WAY1 DATA=%d", data_array[index][1]);
+end
+
+
+endmodule
+

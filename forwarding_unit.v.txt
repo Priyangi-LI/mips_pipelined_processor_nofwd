@@ -1,4 +1,4 @@
-module fwd_unit (input [4:0] rs, input [4:0] rt, input [4:0] ex_mem_write_reg, input [4:0] mem_wb_write_reg, input ex_mem_reg_w, input mem_wb_reg_w, output reg [1:0] fwd_a, output reg [1:0] fwd_b);
+module fwd_unit (input [4:0] rs, input [4:0] rt, input [4:0] ex_mem_write_reg, input [4:0] mem_wb_write_reg, input ex_mem_reg_w, input mem_wb_reg_w, output reg [1:0] fwd_a, output reg [1:0] fwd_b, input cache_stall);
 
 //00 = use register file value
 
@@ -7,13 +7,23 @@ module fwd_unit (input [4:0] rs, input [4:0] rt, input [4:0] ex_mem_write_reg, i
 //01 = use MEM/WB value
 always @(*)
 begin
-if (ex_mem_reg_w && ex_mem_write_reg != 0 && ex_mem_write_reg == rs)	fwd_a = 2'b10;
+if (ex_mem_reg_w && ex_mem_write_reg != 0 && ex_mem_write_reg == rs) fwd_a = 2'b10;
 else if (mem_wb_reg_w && mem_wb_write_reg != 0 && mem_wb_write_reg == rs)	fwd_a = 2'b01;
 else fwd_a = 2'b00;
 
-if (ex_mem_reg_w && ex_mem_write_reg != 0 && ex_mem_write_reg == rt)	fwd_b = 2'b10;
+if (ex_mem_reg_w && ex_mem_write_reg != 0 && ex_mem_write_reg == rt) fwd_b = 2'b10;
 else if (mem_wb_reg_w && mem_wb_write_reg != 0 && mem_wb_write_reg == rt)	fwd_b = 2'b01;
 else fwd_b = 2'b00;
+
+$display(
+"FWD_UNIT rs=%d rt=%d ex_wr=%d wb_wr=%d fwd_a=%b fwd_b=%b",
+rs,
+rt,
+ex_mem_write_reg,
+mem_wb_write_reg,
+fwd_a,
+fwd_b
+);
 
 end 
 

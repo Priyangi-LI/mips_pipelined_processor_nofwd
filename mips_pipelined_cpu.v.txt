@@ -36,7 +36,8 @@ wire [31:0] mem_data;
 //cache wires
 wire cache_hit; wire lower_mem_r; wire [31:0] lower_addr; wire [31:0] cache_read_data; wire lower_mem_w; wire [31:0] lower_write_data;
 
-wire cache_stall; wire actual_pc_write; wire actual_if_id_write; wire actual_id_ex_write; wire actual_ex_mem_write; wire actual_mem_wb_write;
+wire l1_stall; wire cache_stall; wire actual_pc_write; wire actual_if_id_write; wire actual_id_ex_write; wire actual_ex_mem_write; wire actual_mem_wb_write;
+assign cache_stall = l1_stall || l2_stall;
 assign actual_pc_write = pc_write && !cache_stall;
 assign actual_if_id_write = if_id_write && !cache_stall;
 assign actual_id_ex_write = !cache_stall; assign actual_ex_mem_write = !cache_stall; assign actual_mem_wb_write = !cache_stall;
@@ -67,6 +68,14 @@ assign rs = if_id_instr[25:21];
 assign rt = if_id_instr[20:16];
 assign rd = if_id_instr[15:11];
 assign funct = if_id_instr[5:0];
+
+always @(posedge clk)
+begin
+    $display("ID: instr=%h opcode=%b funct=%b",
+             if_id_instr,
+             opcode,
+             funct);
+end
 
 //branch
 wire branch_flush;
@@ -102,6 +111,20 @@ assign actual_addr =
 assign actual_data =
     cache_stall ? lower_write_data : ex_mem_data_b;
 
+//l1-l2 wires
+wire [31:0] l2_read_data;
+
+wire l2_mem_r;
+wire l2_mem_w;
+
+wire [31:0] l2_addr;
+wire [31:0] l2_write_data;
+
+wire l2_hit;
+wire l2_stall;
+
+//bne wires
+wire bne; wire id_ex_bne; wire bubble_bne;
 
 //INSTANTIATING MODULES
 
@@ -118,7 +141,7 @@ pc_mux PC_MUX(pc_slt, pc_plus_4, branch_target, jump_target, npc);
 if_id IF_ID(clk, actual_if_id_write,rst, pipeline_flush,pc_plus_4,instr, if_id_pc_plus_4, if_id_instr);
 
 
-mips_opcode_decoder OPCODE_DECODER(if_id_instr,reg_dst,alu_src,mem_to_reg, reg_w, mem_r,mem_w,branch, j,alu_op);
+mips_opcode_decoder OPCODE_DECODER(if_id_instr,reg_dst,alu_src,mem_to_reg, reg_w, mem_r,mem_w,branch, bne,j,alu_op);
 
 sign_ext SIGN_EXT(if_id_instr, sign_ext_imm);
 
@@ -127,10 +150,10 @@ reg_dst_mux REG_DEST_MUX(rt,rd,reg_dst,id_write_reg);
 reg_file REG_FILE(clk, mem_wb_reg_w, rs, rt, mem_wb_write_reg, write_data, data_a, data_b);
 
 
-id_ex ID_EX(clk,actual_id_ex_write, rst,branch_flush,if_id_instr,if_id_pc_plus_4, rs,rt, id_write_reg, data_a, data_b,sign_ext_imm,bubble_alu_src,bubble_alu_op, bubble_mem_r,bubble_mem_w, bubble_branch,bubble_reg_w,bubble_mem_to_reg,id_ex_instr, id_ex_pc_plus_4, id_ex_rs, id_ex_rt,id_ex_write_reg, id_ex_data_a, id_ex_data_b, id_ex_sign_ext_imm, id_ex_alu_src, id_ex_alu_op, id_ex_mem_r, id_ex_mem_w, id_ex_branch, id_ex_reg_w, id_ex_mem_to_reg);
+id_ex ID_EX(clk,actual_id_ex_write, rst,branch_flush,if_id_instr,if_id_pc_plus_4, rs,rt, id_write_reg, data_a, data_b,sign_ext_imm,bubble_alu_src,bubble_alu_op, bubble_mem_r,bubble_mem_w, bubble_branch,bubble_bne,bubble_reg_w,bubble_mem_to_reg,id_ex_instr, id_ex_pc_plus_4, id_ex_rs, id_ex_rt,id_ex_write_reg, id_ex_data_a, id_ex_data_b, id_ex_sign_ext_imm, id_ex_alu_src, id_ex_alu_op, id_ex_mem_r, id_ex_mem_w, id_ex_branch, id_ex_bne,id_ex_reg_w, id_ex_mem_to_reg);
 
 assign branch_target = id_ex_pc_plus_4 + (id_ex_sign_ext_imm << 2);
-assign branch_taken = id_ex_branch && zero;
+assign branch_taken = (id_ex_branch && zero) || (id_ex_bne && !zero);
 
 //branch_mux BRANCH_MUX(branch_taken, pc_plus_4, branch_target, npc);
 
@@ -147,9 +170,16 @@ ex_mem EX_MEM(clk,actual_ex_mem_write, rst, fwd_data_b,alu_result, id_ex_write_r
 
 
 
-l1_cache L1_CACHE(clk, ex_mem_mem_r, ex_mem_mem_w, ex_mem_alu_result, ex_mem_data_b, cache_read_data, cache_hit, mem_data, lower_mem_r, lower_addr, lower_mem_w, lower_write_data, cache_stall);
+l1_cache L1_CACHE(clk, ex_mem_mem_r, ex_mem_mem_w, ex_mem_alu_result, ex_mem_data_b, cache_read_data, cache_hit, l2_read_data, l2_stall,l2_mem_r, l2_addr, l2_mem_w, l2_write_data, l1_stall);
 
-data_mem DATA_MEM(clk,lower_mem_r, actual_mem_w, actual_addr, actual_data, mem_data);
+data_mem DATA_MEM(
+    clk,
+    lower_mem_r,
+    lower_mem_w,
+    lower_addr,
+    lower_write_data,
+    mem_data
+);
 
 
 
@@ -166,8 +196,47 @@ fwd_mux FWD_B (fwd_b, id_ex_data_b,ex_mem_alu_result,write_data, fwd_data_b);
 
 hazard_detect_unit HAZARD_DETECT_UNIT (id_ex_mem_r, id_ex_rt,rs,rt,pc_write, if_id_write,ctrl_flush);
 
-bubble_mux BUBBLE_MUX(ctrl_flush, reg_w, mem_r, mem_w,  branch,  mem_to_reg, alu_src,alu_op, bubble_reg_w,bubble_mem_r, bubble_mem_w, bubble_branch, bubble_mem_to_reg, bubble_alu_src, bubble_alu_op);
+bubble_mux BUBBLE_MUX(ctrl_flush, reg_w, mem_r, mem_w,  branch,  bne,mem_to_reg, alu_src,alu_op, bubble_reg_w,bubble_mem_r, bubble_mem_w, bubble_branch, bubble_bne, bubble_mem_to_reg, bubble_alu_src, bubble_alu_op);
 
+
+l2_cache L2_CACHE(
+    clk,
+    l2_mem_r,
+    l2_mem_w,
+    l2_addr,
+    l2_write_data,
+
+    l2_read_data,
+    l2_hit,
+
+    mem_data,
+
+    lower_mem_r,
+    lower_addr,
+    lower_mem_w,
+    lower_write_data,
+
+    l2_stall
+);
+
+always @(posedge clk)
+begin
+    $display(
+        "REGFILE rs=%d data_a=%d rt=%d data_b=%d",
+        rs,
+        data_a,
+        rt,
+        data_b
+    );
+end
+always @(posedge clk) begin
+    $display("EX: id_ex_bne=%b zero=%b branch_taken=%b id_ex_rs=%d id_ex_rt=%d",
+              id_ex_bne, zero, branch_taken, id_ex_rs, id_ex_rt);
+end
+always @(posedge clk) begin
+    if (ex_mem_mem_w)
+        $display("STORE addr=%d data=%d", ex_mem_alu_result, ex_mem_data_b);
+end
 
 
 endmodule

@@ -1,0 +1,216 @@
+`timescale 1ns/1ps
+
+module l2_cache_tb;
+
+reg clk;
+
+reg mem_r;
+reg mem_w;
+reg [31:0] addr;
+reg [31:0] write_data;
+
+wire [31:0] read_data;
+wire hit;
+
+wire lower_mem_r;
+wire [31:0] lower_addr;
+
+wire lower_mem_w;
+wire [31:0] lower_write_data;
+
+wire [31:0] lower_data;
+
+wire cache_stall;
+
+//////////////////////////////////////////////////
+// CLOCK
+//////////////////////////////////////////////////
+
+initial begin
+    clk = 0;
+    forever #5 clk = ~clk;
+end
+
+//////////////////////////////////////////////////
+// L2 CACHE
+//////////////////////////////////////////////////
+
+l2_cache DUT(
+    .clk(clk),
+
+    .mem_r(mem_r),
+    .mem_w(mem_w),
+    .addr(addr),
+    .write_data(write_data),
+
+    .read_data(read_data),
+    .hit(hit),
+
+    .lower_data(lower_data),
+
+    .lower_mem_r(lower_mem_r),
+    .lower_addr(lower_addr),
+
+    .lower_mem_w(lower_mem_w),
+    .lower_write_data(lower_write_data),
+
+    .cache_stall(cache_stall)
+);
+
+//////////////////////////////////////////////////
+// MAIN MEMORY
+//////////////////////////////////////////////////
+
+data_mem MEM(
+    .clk(clk),
+
+    .mem_r(lower_mem_r),
+    .mem_w(lower_mem_w),
+
+    .addr(lower_addr),
+    .data_in(lower_write_data),
+
+    .data_w(lower_data)
+);
+
+//////////////////////////////////////////////////
+// TASKS
+//////////////////////////////////////////////////
+
+task do_read;
+input [31:0] a;
+begin
+
+    @(negedge clk);
+
+    addr = a;
+    mem_r = 1;
+    mem_w = 0;
+
+    @(negedge clk);
+
+    mem_r = 0;
+
+    wait(cache_stall == 0);
+
+    @(posedge clk);
+
+    $display(
+        "READ addr=%d hit=%d data=%d",
+        a,
+        hit,
+        read_data
+    );
+
+end
+endtask
+
+task do_write;
+input [31:0] a;
+input [31:0] d;
+begin
+
+    @(negedge clk);
+
+    addr = a;
+    write_data = d;
+
+    mem_r = 0;
+    mem_w = 1;
+
+    @(negedge clk);
+
+    mem_w = 0;
+
+    wait(cache_stall == 0);
+
+    @(posedge clk);
+
+    $display(
+        "WRITE addr=%d data=%d",
+        a,
+        d
+    );
+
+end
+endtask
+
+//////////////////////////////////////////////////
+// TESTS
+//////////////////////////////////////////////////
+
+initial begin
+
+    mem_r = 0;
+    mem_w = 0;
+    addr = 0;
+    write_data = 0;
+
+    //////////////////////////////////////////////////
+    // TEST 1
+    //////////////////////////////////////////////////
+
+    $display("\n===== TEST1 READ MISS/HIT =====");
+
+    do_read(0);
+    do_read(0);
+
+    //////////////////////////////////////////////////
+    // TEST 2
+    //////////////////////////////////////////////////
+
+    $display("\n===== TEST2 FILL BOTH WAYS =====");
+
+    do_read(0);
+    do_read(64);
+
+    //////////////////////////////////////////////////
+    // TEST 3
+    //////////////////////////////////////////////////
+
+    $display("\n===== TEST3 LRU =====");
+
+    do_read(0);
+    do_read(128);
+
+    //////////////////////////////////////////////////
+    // TEST 4
+    //////////////////////////////////////////////////
+
+    $display("\n===== TEST4 WRITE HIT =====");
+
+    do_read(0);
+
+    do_write(0,55);
+
+    do_read(0);
+
+    //////////////////////////////////////////////////
+    // TEST 5
+    //////////////////////////////////////////////////
+
+    $display("\n===== TEST5 DIRTY EVICTION =====");
+
+    do_read(0);
+
+    do_write(0,55);
+
+    do_read(64);
+
+    do_read(128);
+
+    //////////////////////////////////////////////////
+
+    #100;
+
+    $display("\n===== FINAL STATE =====");
+
+    $display("MEM[0]  = %d", MEM.mem_bank[0]);
+    $display("MEM[16] = %d", MEM.mem_bank[16]);
+    $display("MEM[32] = %d", MEM.mem_bank[32]);
+
+    $finish;
+
+end
+
+endmodule

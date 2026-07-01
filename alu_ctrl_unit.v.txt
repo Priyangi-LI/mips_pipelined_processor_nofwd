@@ -15,6 +15,9 @@ else if (alu_op == 2'b10 && funct == 6'b101010)	alu_ctrl = 4'b0111;  //slt
 else if (alu_op == 2'b00) alu_ctrl = 4'b0010;  //lw or sw
 else if (alu_op == 2'b01)	alu_ctrl = 4'b0110; //beq
 
+$display("ALU_CTRL: alu_op=%b funct=%b ctrl=%b",
+             alu_op, funct, alu_ctrl);
 
 end
+
 endmodule

@@ -17,17 +17,34 @@ initial begin
 
 reset = 1;
 #10 reset = 0;
-#500;
-
+#5000;
+$display("R1 = %d", CPU.REG_FILE.reg_bank[1]);
+$display("R2 = %d", CPU.REG_FILE.reg_bank[2]);
+$display("R3 = %d", CPU.REG_FILE.reg_bank[3]);
+$display("R4 = %d", CPU.REG_FILE.reg_bank[4]);
+$display("R5 = %d", CPU.REG_FILE.reg_bank[5]);
+$display("R6 = %d", CPU.REG_FILE.reg_bank[6]);
+$display("R7 = %d", CPU.REG_FILE.reg_bank[7]);
 $display("R8 = %d", CPU.REG_FILE.reg_bank[8]);
-$display("R9 = %d", CPU.REG_FILE.reg_bank[9]);
-$display("R10 = %d", CPU.REG_FILE.reg_bank[10]);
-
-
+$display("R9=%d", CPU.REG_FILE.reg_bank[9]);
+$display("R10=%d", CPU.REG_FILE.reg_bank[10]);
 
 $display("PC=%h", CPU.pc);
 $display("INSTR=%h", CPU.instr);
-$display("MEM[0] = %d", CPU.DATA_MEM.mem_bank[0]);
+$display("DIRTY_ARRAY[0] = %d", CPU.L1_CACHE.dirty_array[0]);
+$display("DATA_ARRAY[0] = %d", CPU.L1_CACHE.data_array[0]);
+$display("VALID_ARRAY[0] = %d", CPU.L1_CACHE.valid_array[0]);
+
+
+$display("cache[8] = %d", CPU.L1_CACHE.data_array[8]);
+$display("cache[9] = %d", CPU.L1_CACHE.data_array[9]);
+$display("cache[10] = %d", CPU.L1_CACHE.data_array[10]);
+$display("cache[11] = %d", CPU.L1_CACHE.data_array[11]);
+$display("mem[32] = %d", CPU.DATA_MEM.mem_bank[32]);
+$display("mem[36] = %d", CPU.DATA_MEM.mem_bank[36]);
+$display("mem[40] = %d", CPU.DATA_MEM.mem_bank[40]);
+$display("mem[44] = %d", CPU.DATA_MEM.mem_bank[44]);
+
 $finish;
 
 end

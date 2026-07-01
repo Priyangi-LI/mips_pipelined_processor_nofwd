@@ -10,8 +10,8 @@ end
 
 
 
-assign rd1 = reg_bank[a];
-assign rd2 = reg_bank[b];
+assign rd1 = (reg_w && w == a && a != 0) ? data_in : reg_bank[a];
+assign rd2 = (reg_w && w == b && b != 0) ? data_in : reg_bank[b];
 
 
 always @(posedge clk)

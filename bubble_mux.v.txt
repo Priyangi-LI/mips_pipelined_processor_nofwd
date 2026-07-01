@@ -1,9 +1,10 @@
-module bubble_mux(input ctrl_flush, input reg_w, input mem_r, input mem_w, input branch, input mem_to_reg, input alu_src, input [1:0] alu_op, output bubble_reg_w, output bubble_mem_r, output bubble_mem_w, output bubble_branch, output bubble_mem_to_reg, output bubble_alu_src, output [1:0] bubble_alu_op);
+module bubble_mux(input ctrl_flush, input reg_w, input mem_r, input mem_w, input branch, input bne, input mem_to_reg, input alu_src, input [1:0] alu_op, output bubble_reg_w, output bubble_mem_r, output bubble_mem_w, output bubble_branch, output bubble_bne, output bubble_mem_to_reg, output bubble_alu_src, output [1:0] bubble_alu_op);
 
 assign bubble_reg_w = (ctrl_flush) ? 0 : reg_w;
 assign bubble_mem_r = (ctrl_flush) ? 0 : mem_r;
 assign bubble_mem_w = (ctrl_flush) ? 0 : mem_w;
 assign bubble_branch = (ctrl_flush) ? 0 : branch;
+assign bubble_bne = (ctrl_flush) ? 0 : bne;
 assign bubble_mem_to_reg = (ctrl_flush) ? 0 : mem_to_reg;
 assign bubble_alu_src = (ctrl_flush) ? 0 : alu_src;
 assign bubble_alu_op = (ctrl_flush) ? 2'b00 : alu_op;

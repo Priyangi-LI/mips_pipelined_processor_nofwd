@@ -4,8 +4,16 @@ reg [31:0] mem_bank [255:0];
 integer i;
 initial begin
 for (i=0;i<256;i=i+1)	mem_bank[i] = 32'b0;
-mem_bank[0] = 32'b100;
-mem_bank[1] = 32'b1000;
+
+    mem_bank[0] = 32'd1;   // byte addr 0
+    mem_bank[1] = 32'd2;   // byte addr 4
+    mem_bank[2] = 32'd3;   // byte addr 8
+    mem_bank[3] = 32'd4;   // byte addr 12
+    mem_bank[4] = 32'd5;   // byte addr 16
+    mem_bank[5] = 32'd6;   // byte addr 20
+    mem_bank[6] = 32'd7;   // byte addr 24
+    mem_bank[7] = 32'd8;   // byte addr 28
+
 end
 
 wire [31:0] debug_mem0;
